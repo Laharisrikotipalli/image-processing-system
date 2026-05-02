@@ -67,15 +67,8 @@ jobs:
         run: |
           aws --endpoint-url=http://localhost:4566 s3 mb s3://raw-images-propelhq || true
           aws --endpoint-url=http://localhost:4566 s3 mb s3://processed-images-propelhq || true
-          DLQ_URL=$(aws --endpoint-url=http://localhost:4566 sqs create-queue \
-            --queue-name image-processing-dlq-propelhq \
-            --query 'QueueUrl' --output text)
-          DLQ_ARN=$(aws --endpoint-url=http://localhost:4566 sqs get-queue-attributes \
-            --queue-url "$DLQ_URL" --attribute-names QueueArn \
-            --query 'Attributes.QueueArn' --output text)
           aws --endpoint-url=http://localhost:4566 sqs create-queue \
-            --queue-name image-processing-queue-propelhq \
-            --attributes "{\"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}" || true
+            --queue-name image-processing-queue-propelhq || true
 
       - name: Verify resources exist
         env:
