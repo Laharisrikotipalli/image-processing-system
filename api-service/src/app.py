@@ -90,8 +90,6 @@ def upload_image():
 
     try:
         s3 = get_s3_client()
-        sqs = get_sqs_client()
-
         image_file.seek(0)
 
         s3.upload_fileobj(
@@ -106,24 +104,31 @@ def upload_image():
             "image_id": image_id
         }))
 
-        message = {
-            "image_id": image_id,
-            "s3_key_raw": s3_key
-        }
+        try:
+            sqs = get_sqs_client()
 
-        queue_url = SQS_QUEUE_URL
-        if "localhost" in queue_url:
-            queue_url = queue_url.replace("localhost", "localstack")
+            queue_url = SQS_QUEUE_URL
+            if "localhost" in queue_url:
+                queue_url = queue_url.replace("localhost", "localstack")
 
-        sqs.send_message(
-            QueueUrl=queue_url,
-            MessageBody=json.dumps(message)
-        )
+            sqs.send_message(
+                QueueUrl=queue_url,
+                MessageBody=json.dumps({
+                    "image_id": image_id,
+                    "s3_key_raw": s3_key
+                })
+            )
 
-        logger.info(json.dumps({
-            "event": "sqs_message_sent",
-            "image_id": image_id
-        }))
+            logger.info(json.dumps({
+                "event": "sqs_message_sent",
+                "image_id": image_id
+            }))
+
+        except Exception as sqs_error:
+            logger.error(json.dumps({
+                "event": "sqs_failed",
+                "error": str(sqs_error)
+            }))
 
         return jsonify({
             "image_id": image_id,
