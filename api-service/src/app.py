@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+PUBLIC_HOST = os.getenv("PUBLIC_HOST", "localhost")
+
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png"}
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 
@@ -119,6 +121,9 @@ def get_processed_image(image_id):
             Params={"Bucket": S3_BUCKET_PROCESSED, "Key": s3_key},
             ExpiresIn=3600
         )
+
+        url = url.replace("localstack", PUBLIC_HOST)
+        url = url.replace("localhost.localstack.cloud", PUBLIC_HOST)
 
         return jsonify({
             "image_id": image_id,

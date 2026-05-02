@@ -1,24 +1,26 @@
-version: "3.8"
-
 services:
-
   localstack:
     image: localstack/localstack:2.3
     container_name: localstack
     ports:
       - "4566:4566"
     environment:
-      - SERVICES=s3,sqs
-      - AWS_DEFAULT_REGION=us-east-1
-    volumes:
-      - localstack-data:/var/lib/localstack
-      - ./scripts/init-localstack.sh:/etc/localstack/init/ready.d/init-localstack.sh
+      SERVICES: s3,sqs
+      AWS_DEFAULT_REGION: us-east-1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 5s
       timeout: 5s
-      retries: 20
-      start_period: 10s
+      retries: 10
+
+  localstack-init:
+    image: python:3.11-slim
+    container_name: localstack-init
+    depends_on:
+      localstack:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["pip install -q 'boto3==1.28.57' 'botocore==1.31.57' && python -c \"\nimport boto3, json\nendpoint='http://localstack:4566'\nkw=dict(endpoint_url=endpoint,region_name='us-east-1',aws_access_key_id='test',aws_secret_access_key='test')\ns3=boto3.client('s3',**kw)\nsqs=boto3.client('sqs',**kw)\nfor b in ('raw-images-propelhq','processed-images-propelhq'):\n    try: s3.create_bucket(Bucket=b)\n    except: pass\ndlq=sqs.create_queue(QueueName='image-processing-dlq-propelhq')['QueueUrl']\ndlq_arn=sqs.get_queue_attributes(QueueUrl=dlq,AttributeNames=['QueueArn'])['Attributes']['QueueArn']\nsqs.create_queue(QueueName='image-processing-queue-propelhq',Attributes={'RedrivePolicy':json.dumps({'deadLetterTargetArn':dlq_arn,'maxReceiveCount':'3'})})\nprint('AWS resources ready')\n\""]
 
   api:
     build: ./api-service
@@ -33,9 +35,10 @@ services:
       S3_BUCKET_RAW: raw-images-propelhq
       S3_BUCKET_PROCESSED: processed-images-propelhq
       SQS_QUEUE_URL: http://localstack:4566/000000000000/image-processing-queue-propelhq
+      PUBLIC_HOST: localhost
     depends_on:
-      localstack:
-        condition: service_healthy
+      localstack-init:
+        condition: service_completed_successfully
 
   worker:
     build: ./worker-service
@@ -49,8 +52,5 @@ services:
       S3_BUCKET_PROCESSED: processed-images-propelhq
       SQS_QUEUE_URL: http://localstack:4566/000000000000/image-processing-queue-propelhq
     depends_on:
-      localstack:
-        condition: service_healthy
-
-volumes:
-  localstack-data:
+      localstack-init:
+        condition: service_completed_successfully

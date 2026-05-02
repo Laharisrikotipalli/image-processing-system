@@ -1,39 +1,44 @@
-#!/bin/bash
-# Runs automatically inside LocalStack once it is ready (mounted at
-# /etc/localstack/init/ready.d/). Creates S3 buckets and SQS queues.
+import boto3
+import json
 
-set -e
+ENDPOINT = "http://localstack:4566"
+REGION   = "us-east-1"
+kwargs   = dict(
+    endpoint_url=ENDPOINT,
+    region_name=REGION,
+    aws_access_key_id="test",
+    aws_secret_access_key="test",
+)
 
-ENDPOINT="http://localhost:4566"
-REGION="us-east-1"
+s3  = boto3.client("s3",  **kwargs)
+sqs = boto3.client("sqs", **kwargs)
 
-echo "==> LocalStack init script starting..."
+# S3 buckets
+for bucket in ("raw-images-propelhq", "processed-images-propelhq"):
+    try:
+        s3.create_bucket(Bucket=bucket)
+        print(f"  created bucket: {bucket}")
+    except Exception as e:
+        print(f"  bucket already exists or error ({bucket}): {e}")
 
+# DLQ
+print("==> Creating DLQ...")
+dlq_url = sqs.create_queue(QueueName="image-processing-dlq-propelhq")["QueueUrl"]
+dlq_arn = sqs.get_queue_attributes(
+    QueueUrl=dlq_url, AttributeNames=["QueueArn"]
+)["Attributes"]["QueueArn"]
+print(f"  DLQ ARN: {dlq_arn}")
 
-echo "  Creating S3 bucket: raw-images-propelhq"
-aws --endpoint-url=$ENDPOINT s3 mb s3://raw-images-propelhq --region $REGION || true
-
-echo "  Creating S3 bucket: processed-images-propelhq"
-aws --endpoint-url=$ENDPOINT s3 mb s3://processed-images-propelhq --region $REGION || true
-
-
-echo "  Creating DLQ: image-processing-dlq-propelhq"
-DLQ_URL=$(aws --endpoint-url=$ENDPOINT sqs create-queue \
-  --queue-name image-processing-dlq-propelhq \
-  --region $REGION \
-  --query 'QueueUrl' --output text)
-
-DLQ_ARN=$(aws --endpoint-url=$ENDPOINT sqs get-queue-attributes \
-  --queue-url $DLQ_URL \
-  --attribute-names QueueArn \
-  --query 'Attributes.QueueArn' --output text)
-
-echo "  DLQ ARN: $DLQ_ARN"
-
-echo "  Creating main queue: image-processing-queue-propelhq"
-aws --endpoint-url=$ENDPOINT sqs create-queue \
-  --queue-name image-processing-queue-propelhq \
-  --region $REGION \
-  --attributes "{\"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}"
-
-echo "==> All resources created successfully."
+# Main queue
+print("==> Creating main SQS queue...")
+sqs.create_queue(
+    QueueName="image-processing-queue-propelhq",
+    Attributes={
+        "RedrivePolicy": json.dumps({
+            "deadLetterTargetArn": dlq_arn,
+            "maxReceiveCount": "3",
+        })
+    },
+)
+print("  created: image-processing-queue-propelhq")
+print("==> All AWS resources created successfully.")
