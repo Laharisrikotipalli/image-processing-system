@@ -42,7 +42,9 @@ jobs:
           python-version: '3.11'
 
       - name: Install Python dependencies
-        run: pip install requests pytest boto3 awscli pillow
+        # awscli removed — pip installs v1 which breaks LocalStack 2.3 SQS.
+        # ubuntu-latest already has AWS CLI v2 pre-installed.
+        run: pip install requests pytest boto3 pillow
 
       - name: Start LocalStack
         run: docker compose up -d localstack
