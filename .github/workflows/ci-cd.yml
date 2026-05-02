@@ -9,10 +9,8 @@ jobs:
 
   unit-tests:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -34,7 +32,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -43,8 +40,8 @@ jobs:
 
       - run: docker compose up -d --build
 
-      # wait for LocalStack
-      - run: |
+      - name: Wait for LocalStack
+        run: |
           for i in {1..20}; do
             if curl -s http://localhost:4566/_localstack/health | grep -q '"initialized": true'; then
               break
@@ -52,14 +49,14 @@ jobs:
             sleep 3
           done
 
-      # create resources
-      - run: |
+      - name: Create resources
+        run: |
           awslocal s3 mb s3://raw-images-propelhq || true
           awslocal s3 mb s3://processed-images-propelhq || true
           awslocal sqs create-queue --queue-name image-processing-queue-propelhq || true
 
-      # wait for API
-      - run: |
+      - name: Wait for API
+        run: |
           for i in {1..15}; do
             if curl -s http://localhost:5000/health | grep -q "ok"; then
               break
@@ -67,8 +64,8 @@ jobs:
             sleep 3
           done
 
-      # DEBUG (very important if fails)
-      - run: docker logs api-service || true
+      - name: Debug logs
+        run: docker logs api-service || true
 
       - run: pytest tests/integration --integration -v
         env:
@@ -81,7 +78,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs: integration-tests
-
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t propelhq-api ./api-service
@@ -92,10 +88,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/main'
-
     steps:
       - uses: actions/checkout@v4
-
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
