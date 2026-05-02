@@ -20,17 +20,17 @@ def create_test_image(width=300, height=200, color=(100, 150, 200)):
     return buf.read()
 
 
-# ── Image processing logic ────────────────────────────────────────────────────
+
 
 def test_resize_preserves_aspect_ratio():
     image_bytes = create_test_image(width=300, height=200)
     processed = resize_and_watermark(image_bytes)
 
     result_img = Image.open(BytesIO(processed))
-    # Both dimensions must be <= 150
+    
     assert result_img.width <= 150
     assert result_img.height <= 150
-    # Aspect ratio check: 300/200 = 1.5 → at max width=150, height=100
+    
     assert abs(result_img.width / result_img.height - 300 / 200) < 0.1
 
 
@@ -54,7 +54,6 @@ def test_watermark_applied():
     """Smoke test: processing should not raise and output should differ from a plain resize."""
     image_bytes = create_test_image(width=200, height=200, color=(255, 255, 255))
     processed = resize_and_watermark(image_bytes)
-    # Should produce valid PNG
     result_img = Image.open(BytesIO(processed))
     assert result_img.width > 0
 
@@ -75,7 +74,6 @@ def test_resize_wide_image():
     assert result_img.height <= 150
 
 
-# ── Message processing ────────────────────────────────────────────────────────
 
 def make_message(image_id="test-id-123", s3_key="original/test-id-123.jpg"):
     return {
@@ -100,7 +98,7 @@ def test_process_message_success(mock_download, mock_process, mock_upload):
     mock_download.assert_called_once()
     mock_process.assert_called_once()
     mock_upload.assert_called_once()
-    # Message must be deleted after success
+   
     mock_sqs.delete_message.assert_called_once()
     call_kwargs = mock_sqs.delete_message.call_args[1]
     assert call_kwargs["ReceiptHandle"] == "fake-receipt-handle"
@@ -118,7 +116,7 @@ def test_process_message_download_failure(mock_download):
     result = process_message(make_message(), mock_s3, mock_sqs)
 
     assert result is False
-    # Must NOT delete message on failure
+    
     mock_sqs.delete_message.assert_not_called()
 
 
@@ -143,7 +141,7 @@ def test_process_message_missing_fields():
     assert result is False
 
 
-# ── S3 helpers ────────────────────────────────────────────────────────────────
+
 
 def test_download_image_from_s3():
     mock_s3 = MagicMock()

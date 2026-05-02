@@ -20,7 +20,7 @@ from config import (
     THUMBNAIL_SIZE,
 )
 
-# Structured JSON logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -81,23 +81,22 @@ def resize_and_watermark(image_bytes, size=THUMBNAIL_SIZE, watermark_text=WATERM
     """
     img = Image.open(io.BytesIO(image_bytes))
 
-    # Convert to RGBA for watermark support
     if img.mode not in ("RGBA", "RGB"):
         img = img.convert("RGB")
 
-    # Resize preserving aspect ratio (thumbnail does this in-place)
+  
     img.thumbnail(size)
 
-    # Apply watermark to bottom-right corner
+
     draw = ImageDraw.Draw(img)
 
-    # Try to use a basic font, fall back to default
+
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
     except (IOError, OSError):
         font = ImageFont.load_default()
 
-    # Calculate text bounding box
+
     bbox = draw.textbbox((0, 0), watermark_text, font=font)
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
@@ -106,11 +105,10 @@ def resize_and_watermark(image_bytes, size=THUMBNAIL_SIZE, watermark_text=WATERM
     x = img.width - text_width - margin
     y = img.height - text_height - margin
 
-    # Semi-transparent shadow for readability
+
     draw.text((x + 1, y + 1), watermark_text, font=font, fill=(0, 0, 0, 160))
     draw.text((x, y), watermark_text, font=font, fill=(255, 255, 255, 200))
 
-    # Save as PNG to bytes
     output = io.BytesIO()
     img.save(output, format="PNG")
     output.seek(0)
@@ -153,20 +151,20 @@ def process_message(message, s3_client, sqs_client):
     logger.info(json.dumps({"event": "processing_start", "image_id": image_id, "s3_key_raw": s3_key_raw}))
 
     try:
-        # Step 1: Download raw image
+        
         image_bytes = download_image_from_s3(s3_client, S3_BUCKET_RAW, s3_key_raw)
         logger.info(json.dumps({"event": "s3_download_success", "image_id": image_id}))
 
-        # Step 2: Resize and watermark
+       
         processed_bytes = resize_and_watermark(image_bytes)
         logger.info(json.dumps({"event": "image_processed", "image_id": image_id}))
 
-        # Step 3: Upload processed image
+        
         output_key = f"{image_id}_thumbnail.png"
         upload_image_to_s3(s3_client, S3_BUCKET_PROCESSED, output_key, processed_bytes)
         logger.info(json.dumps({"event": "s3_upload_success", "image_id": image_id, "output_key": output_key}))
 
-        # Step 4: Delete message from SQS ONLY after successful processing
+      
         def _delete():
             sqs_client.delete_message(QueueUrl=SQS_QUEUE_URL, ReceiptHandle=receipt_handle)
 
@@ -192,7 +190,7 @@ def poll_queue(s3_client, sqs_client):
             return sqs_client.receive_message(
                 QueueUrl=SQS_QUEUE_URL,
                 MaxNumberOfMessages=SQS_MAX_MESSAGES,
-                WaitTimeSeconds=SQS_WAIT_TIME_SECONDS,  # Long polling — avoids busy-wait
+                WaitTimeSeconds=SQS_WAIT_TIME_SECONDS,  
                 VisibilityTimeout=SQS_VISIBILITY_TIMEOUT,
             )
 
