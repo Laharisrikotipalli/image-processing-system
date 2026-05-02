@@ -59,13 +59,6 @@ def get_sqs_client():
     )
 
 
-def ensure_bucket_exists(s3, bucket_name):
-    try:
-        s3.head_bucket(Bucket=bucket_name)
-    except ClientError:
-        s3.create_bucket(Bucket=bucket_name)
-
-
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -99,10 +92,6 @@ def upload_image():
         s3 = get_s3_client()
         sqs = get_sqs_client()
 
-        # ✅ Ensure buckets exist (fix CI race issue)
-        ensure_bucket_exists(s3, S3_BUCKET_RAW)
-        ensure_bucket_exists(s3, S3_BUCKET_PROCESSED)
-
         image_file.seek(0)
 
         s3.upload_fileobj(
@@ -122,8 +111,12 @@ def upload_image():
             "s3_key_raw": s3_key
         }
 
+        queue_url = SQS_QUEUE_URL
+        if "localhost" in queue_url:
+            queue_url = queue_url.replace("localhost", "localstack")
+
         sqs.send_message(
-            QueueUrl=SQS_QUEUE_URL,
+            QueueUrl=queue_url,
             MessageBody=json.dumps(message)
         )
 
