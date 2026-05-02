@@ -1,0 +1,126 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+
+
+  unit-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # API Tests
+      - name: Install API dependencies
+        run: |
+          cd api-service
+          pip install -r src/requirements.txt pytest pytest-mock
+
+      - name: Run API tests
+        run: |
+          cd api-service
+          pytest tests -v
+
+      # Worker Tests
+      - name: Install Worker dependencies
+        run: |
+          cd worker-service
+          pip install -r src/requirements.txt pytest pytest-mock pillow
+
+      - name: Run Worker tests
+        run: |
+          cd worker-service
+          pytest tests -v
+
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    services:
+      localstack:
+        image: localstack/localstack:2.3
+        ports:
+          - 4566:4566
+        env:
+          SERVICES: s3,sqs
+          AWS_DEFAULT_REGION: us-east-1
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pytest pillow boto3
+
+      - name: Start API + Worker (Docker)
+        run: |
+          docker-compose up -d --build
+          sleep 15
+
+      - name: Run integration tests
+        run: |
+          pytest tests/integration --integration -v
+        env:
+          AWS_ENDPOINT_URL: http://localhost:4566
+          S3_BUCKET_RAW: raw-images-propelhq
+          S3_BUCKET_PROCESSED: processed-images-propelhq
+          SQS_QUEUE_URL: http://localhost:4566/000000000000/image-processing-queue-propelhq
+
+
+  build:
+    runs-on: ubuntu-latest
+    needs: integration-tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -t propelhq-api ./api-service
+
+      - name: Build Worker image
+        run: docker build -t propelhq-worker ./worker-service
+
+ 
+  push:
+    runs-on: ubuntu-latest
+    needs: build
+
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push API
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/propelhq-api ./api-service
+          docker push ${{ secrets.DOCKER_USERNAME }}/propelhq-api
+
+      - name: Build and Push Worker
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/propelhq-worker ./worker-service
+          docker push ${{ secrets.DOCKER_USERNAME }}/propelhq-worker

@@ -1,0 +1,68 @@
+{
+  "info": {
+    "name": "PropelHQ Image Processing API",
+    "_postman_id": "12345-abcde-67890",
+    "description": "Postman collection for PropelHQ Image Processing Service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5000/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Upload Image",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "image",
+              "type": "file",
+              "src": ""
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/images/upload",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["images", "upload"]
+        }
+      }
+    },
+    {
+      "name": "Get Processed Image",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5000/images/processed/{{image_id}}",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["images", "processed", "{{image_id}}"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "image_id",
+      "value": ""
+    }
+  ]
+}
