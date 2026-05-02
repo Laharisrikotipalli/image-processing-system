@@ -90,6 +90,8 @@ def upload_image():
 
     try:
         s3 = get_s3_client()
+        sqs = get_sqs_client()
+
         image_file.seek(0)
 
         s3.upload_fileobj(
@@ -99,36 +101,13 @@ def upload_image():
             ExtraArgs={"ContentType": image_file.mimetype},
         )
 
-        logger.info(json.dumps({
-            "event": "s3_upload_success",
-            "image_id": image_id
-        }))
-
-        try:
-            sqs = get_sqs_client()
-
-            queue_url = SQS_QUEUE_URL
-            if "localhost" in queue_url:
-                queue_url = queue_url.replace("localhost", "localstack")
-
-            sqs.send_message(
-                QueueUrl=queue_url,
-                MessageBody=json.dumps({
-                    "image_id": image_id,
-                    "s3_key_raw": s3_key
-                })
-            )
-
-            logger.info(json.dumps({
-                "event": "sqs_message_sent",
-                "image_id": image_id
-            }))
-
-        except Exception as sqs_error:
-            logger.error(json.dumps({
-                "event": "sqs_failed",
-                "error": str(sqs_error)
-            }))
+        sqs.send_message(
+            QueueUrl=SQS_QUEUE_URL,
+            MessageBody=json.dumps({
+                "image_id": image_id,
+                "s3_key_raw": s3_key
+            })
+        )
 
         return jsonify({
             "image_id": image_id,
@@ -136,10 +115,7 @@ def upload_image():
         }), 202
 
     except Exception as e:
-        logger.error(json.dumps({
-            "event": "error",
-            "error": str(e)
-        }))
+        logger.error(str(e))
         return jsonify({
             "error": "Internal server error",
             "details": str(e)
@@ -172,11 +148,7 @@ def get_processed_image(image_id):
         if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
             return jsonify({"error": "Image not found"}), 404
 
-        logger.error(str(e))
-        return jsonify({
-            "error": "Internal server error",
-            "details": str(e)
-        }), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 if __name__ == "__main__":
