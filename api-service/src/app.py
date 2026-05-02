@@ -6,27 +6,41 @@ import boto3
 import traceback
 from botocore.exceptions import ClientError
 from flask import Flask, request, jsonify
+from config import (
+    S3_BUCKET_RAW,
+    S3_BUCKET_PROCESSED,
+    SQS_QUEUE_URL,
+    AWS_REGION,
+)
 
-# Configure logging to show actual errors in Docker logs
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        return json.dumps({
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "logger": record.name,
+        })
+
+handler = logging.StreamHandler()
+handler.setFormatter(JsonFormatter())
+logger.handlers = [handler]
+logger.propagate = False
+
 app = Flask(__name__)
 
-# Constants from environment
-S3_BUCKET_RAW = os.getenv("S3_BUCKET_RAW", "raw-images-propelhq")
-S3_BUCKET_PROCESSED = os.getenv("S3_BUCKET_PROCESSED", "processed-images-propelhq")
-SQS_QUEUE_URL = os.getenv("SQS_QUEUE_URL")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL")
+PUBLIC_HOST = os.getenv("PUBLIC_HOST", "localhost")
 
+ALLOWED_MIME_TYPES = {"image/jpeg", "image/png"}
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 
 def get_s3_client():
     return boto3.client(
         "s3",
         region_name=AWS_REGION,
-        endpoint_url=ENDPOINT_URL,
+        endpoint_url=os.getenv("AWS_ENDPOINT_URL"),
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
     )
@@ -35,7 +49,7 @@ def get_sqs_client():
     return boto3.client(
         "sqs",
         region_name=AWS_REGION,
-        endpoint_url=ENDPOINT_URL,
+        endpoint_url=os.getenv("AWS_ENDPOINT_URL"),
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
     )
@@ -53,8 +67,15 @@ def upload_image():
         return jsonify({"error": "No image file provided"}), 400
 
     image_file = request.files["image"]
-    if image_file.filename == "" or not allowed_file(image_file.filename):
-        return jsonify({"error": "Invalid file"}), 400
+
+    if image_file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+
+    if not allowed_file(image_file.filename):
+        return jsonify({"error": "Invalid image file type"}), 400
+
+    if image_file.mimetype not in ALLOWED_MIME_TYPES:
+        return jsonify({"error": "Invalid MIME type"}), 400
 
     image_id = str(uuid.uuid4())
     extension = image_file.filename.rsplit(".", 1)[1].lower()
@@ -64,7 +85,8 @@ def upload_image():
         s3 = get_s3_client()
         sqs = get_sqs_client()
 
-        # 1. Upload to S3
+        image_file.seek(0)
+
         s3.upload_fileobj(
             image_file,
             S3_BUCKET_RAW,
@@ -72,7 +94,6 @@ def upload_image():
             ExtraArgs={"ContentType": image_file.mimetype},
         )
 
-        # 2. Send to SQS
         sqs.send_message(
             QueueUrl=SQS_QUEUE_URL,
             MessageBody=json.dumps({
@@ -81,28 +102,43 @@ def upload_image():
             })
         )
 
-        return jsonify({"image_id": image_id, "message": "Accepted"}), 202
+        return jsonify({
+            "image_id": image_id,
+            "message": "Image upload initiated"
+        }), 202
 
     except Exception as e:
-        logger.error(f"UPLOAD ERROR: {str(e)}")
         logger.error(traceback.format_exc())
-        return jsonify({"error": "Internal Error", "details": str(e)}), 500
+        return jsonify({
+            "error": "Internal server error",
+            "details": str(e)
+        }), 500
 
 @app.route("/images/processed/<image_id>", methods=["GET"])
 def get_processed_image(image_id):
     s3_key = f"{image_id}_thumbnail.png"
+
     try:
         s3 = get_s3_client()
+
         s3.head_object(Bucket=S3_BUCKET_PROCESSED, Key=s3_key)
-        
+
         url = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": S3_BUCKET_PROCESSED, "Key": s3_key},
             ExpiresIn=3600
         )
-        return jsonify({"image_id": image_id, "url": url}), 200
-    except ClientError:
-        return jsonify({"error": "Not ready or not found"}), 404
+
+        return jsonify({
+            "image_id": image_id,
+            "url": url
+        }), 200
+
+    except ClientError as e:
+        if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
+            return jsonify({"error": "Image not found"}), 404
+
+        return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
