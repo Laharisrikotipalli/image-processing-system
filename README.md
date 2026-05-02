@@ -112,9 +112,9 @@ curl http://localhost:5000/images/processed/<image_id>
 }
 ```
 ### 5. Download the image
-``Open the returned URL in a browser
-The processed image will download/display
-The image includes the watermark``
+- Open the returned URL in a browser
+- The processed image will download/display
+- The image includes the watermark
 ---
 
 ## API Endpoints
