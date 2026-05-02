@@ -10,12 +10,10 @@ from config import (
     S3_BUCKET_PROCESSED,
     SQS_QUEUE_URL,
     AWS_REGION,
-    AWS_ENDPOINT_URL,
 )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 class JsonFormatter(logging.Formatter):
     def format(self, record):
@@ -24,7 +22,6 @@ class JsonFormatter(logging.Formatter):
             "message": record.getMessage(),
             "logger": record.name,
         })
-
 
 handler = logging.StreamHandler()
 handler.setFormatter(JsonFormatter())
@@ -38,35 +35,30 @@ PUBLIC_HOST = os.getenv("PUBLIC_HOST", "localhost")
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png"}
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 
-
 def get_s3_client():
     return boto3.client(
         "s3",
         region_name=AWS_REGION,
-        endpoint_url=AWS_ENDPOINT_URL,
+        endpoint_url=os.getenv("AWS_ENDPOINT_URL"),
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
     )
-
 
 def get_sqs_client():
     return boto3.client(
         "sqs",
         region_name=AWS_REGION,
-        endpoint_url=AWS_ENDPOINT_URL,
+        endpoint_url=os.getenv("AWS_ENDPOINT_URL"),
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
     )
 
-
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-
 
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"}), 200
-
 
 @app.route("/images/upload", methods=["POST"])
 def upload_image():
@@ -121,7 +113,6 @@ def upload_image():
             "details": str(e)
         }), 500
 
-
 @app.route("/images/processed/<image_id>", methods=["GET"])
 def get_processed_image(image_id):
     s3_key = f"{image_id}_thumbnail.png"
@@ -149,7 +140,6 @@ def get_processed_image(image_id):
             return jsonify({"error": "Image not found"}), 404
 
         return jsonify({"error": "Internal server error"}), 500
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
