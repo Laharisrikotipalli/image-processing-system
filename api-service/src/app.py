@@ -6,7 +6,12 @@ import boto3
 import traceback
 from botocore.exceptions import ClientError
 from flask import Flask, request, jsonify
-from config import S3_BUCKET_RAW, S3_BUCKET_PROCESSED, SQS_QUEUE_URL, AWS_REGION
+from config import (
+    S3_BUCKET_RAW,
+    S3_BUCKET_PROCESSED,
+    SQS_QUEUE_URL,
+    AWS_REGION,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,6 +20,7 @@ app = Flask(__name__)
 
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png"}
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
+
 
 def get_s3_client():
     return boto3.client(
@@ -25,6 +31,7 @@ def get_s3_client():
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
     )
 
+
 def get_sqs_client():
     return boto3.client(
         "sqs",
@@ -34,12 +41,15 @@ def get_sqs_client():
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
     )
 
+
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route("/health")
+
+@app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"}), 200
+
 
 @app.route("/images/upload", methods=["POST"])
 def upload_image():
@@ -52,14 +62,14 @@ def upload_image():
         return jsonify({"error": "No file selected"}), 400
 
     if not allowed_file(image_file.filename):
-        return jsonify({"error": "Invalid file type"}), 400
+        return jsonify({"error": "Invalid image file type"}), 400
 
     if image_file.mimetype not in ALLOWED_MIME_TYPES:
         return jsonify({"error": "Invalid MIME type"}), 400
 
     image_id = str(uuid.uuid4())
-    ext = image_file.filename.rsplit(".", 1)[1].lower()
-    s3_key = f"original/{image_id}.{ext}"
+    extension = image_file.filename.rsplit(".", 1)[1].lower()
+    s3_key = f"original/{image_id}.{extension}"
 
     try:
         s3 = get_s3_client()
@@ -82,26 +92,45 @@ def upload_image():
             })
         )
 
-        return jsonify({"image_id": image_id}), 202
+        return jsonify({
+            "image_id": image_id,
+            "message": "Image upload initiated"
+        }), 202
 
-    except Exception:
+    except Exception as e:
         logger.error(traceback.format_exc())
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({
+            "error": "Internal server error",
+            "details": str(e)
+        }), 500
 
-@app.route("/images/processed/<image_id>")
-def get_processed(image_id):
-    key = f"{image_id}_thumbnail.png"
+
+@app.route("/images/processed/<image_id>", methods=["GET"])
+def get_processed_image(image_id):
+    s3_key = f"{image_id}_thumbnail.png"
+
     try:
         s3 = get_s3_client()
-        s3.head_object(Bucket=S3_BUCKET_PROCESSED, Key=key)
+
+        s3.head_object(Bucket=S3_BUCKET_PROCESSED, Key=s3_key)
 
         url = s3.generate_presigned_url(
             "get_object",
-            Params={"Bucket": S3_BUCKET_PROCESSED, "Key": key},
+            Params={"Bucket": S3_BUCKET_PROCESSED, "Key": s3_key},
             ExpiresIn=3600
         )
 
-        return jsonify({"image_id": image_id, "url": url}), 200
+        return jsonify({
+            "image_id": image_id,
+            "url": url
+        }), 200
 
-    except ClientError:
-        return jsonify({"error": "Image not found"}), 404
+    except ClientError as e:
+        if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
+            return jsonify({"error": "Image not found"}), 404
+
+        return jsonify({"error": "Internal server error"}), 500
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
