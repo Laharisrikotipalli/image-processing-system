@@ -39,7 +39,6 @@ ALLOWED_MIME_TYPES = {"image/jpeg", "image/png"}
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 
 
-
 def get_s3_client():
     return boto3.client(
         "s3",
@@ -58,6 +57,13 @@ def get_sqs_client():
         aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
     )
+
+
+def ensure_bucket_exists(s3, bucket_name):
+    try:
+        s3.head_bucket(Bucket=bucket_name)
+    except ClientError:
+        s3.create_bucket(Bucket=bucket_name)
 
 
 def allowed_file(filename):
@@ -93,9 +99,12 @@ def upload_image():
         s3 = get_s3_client()
         sqs = get_sqs_client()
 
+        # ✅ Ensure buckets exist (fix CI race issue)
+        ensure_bucket_exists(s3, S3_BUCKET_RAW)
+        ensure_bucket_exists(s3, S3_BUCKET_PROCESSED)
+
         image_file.seek(0)
 
-        # Upload to S3
         s3.upload_fileobj(
             image_file,
             S3_BUCKET_RAW,
@@ -108,7 +117,6 @@ def upload_image():
             "image_id": image_id
         }))
 
-        # Send message to SQS
         message = {
             "image_id": image_id,
             "s3_key_raw": s3_key
@@ -134,7 +142,10 @@ def upload_image():
             "event": "error",
             "error": str(e)
         }))
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({
+            "error": "Internal server error",
+            "details": str(e)
+        }), 500
 
 
 @app.route("/images/processed/<image_id>", methods=["GET"])
@@ -164,7 +175,10 @@ def get_processed_image(image_id):
             return jsonify({"error": "Image not found"}), 404
 
         logger.error(str(e))
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({
+            "error": "Internal server error",
+            "details": str(e)
+        }), 500
 
 
 if __name__ == "__main__":
