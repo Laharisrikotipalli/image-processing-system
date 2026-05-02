@@ -128,7 +128,7 @@ def get_processed_image(image_id):
             ExpiresIn=3600
         )
 
-        url = url.replace("localstack", PUBLIC_HOST)
+        url = url.replace("host.docker.internal", PUBLIC_HOST)
 
         return jsonify({
             "image_id": image_id,

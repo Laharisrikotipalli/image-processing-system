@@ -20,12 +20,14 @@ services:
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
-      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ENDPOINT_URL: http://host.docker.internal:4566
       S3_BUCKET_RAW: raw-images-propelhq
       S3_BUCKET_PROCESSED: processed-images-propelhq
-      SQS_QUEUE_URL: http://localstack:4566/000000000000/image-processing-queue-propelhq
+      SQS_QUEUE_URL: http://host.docker.internal:4566/000000000000/image-processing-queue-propelhq
     depends_on:
       - localstack
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   worker:
     build: ./worker-service
@@ -34,9 +36,11 @@ services:
       AWS_REGION: us-east-1
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
-      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ENDPOINT_URL: http://host.docker.internal:4566
       S3_BUCKET_RAW: raw-images-propelhq
       S3_BUCKET_PROCESSED: processed-images-propelhq
-      SQS_QUEUE_URL: http://localstack:4566/000000000000/image-processing-queue-propelhq
+      SQS_QUEUE_URL: http://host.docker.internal:4566/000000000000/image-processing-queue-propelhq
     depends_on:
       - localstack
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
