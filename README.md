@@ -21,7 +21,7 @@ Client → GET /images/processed/{id} → API Service → pre-signed URL
 ---
 
 ## Project Structure
-
+```
 propelhq-image-service/  
 ├── api-service/  
 ├── worker-service/  
@@ -36,7 +36,7 @@ propelhq-image-service/
 ├── .github/workflows/  
 │   └── ci-cd.yml  
 └── README.md  
-
+```
 ---
 
 ## Features
@@ -63,16 +63,21 @@ propelhq-image-service/
 ---
 
 ### 1. Clone the repository
-
-git clone <your-repo-url>  
-cd propelhq-image-service  
-cp .env.example .env  
-
+```
+git clone <your-repo-url>
+```
+```
+cd propelhq-image-service
+```
+```
+cp .env.example .env
+```
 ---
 
 ### 2. Start services
-
-docker compose up --build  
+```
+docker compose up --build
+```
 
 This starts:
 
@@ -83,22 +88,22 @@ This starts:
 ---
 
 ### 3. Upload an image
-
+```
 curl -X POST http://localhost:5000/images/upload -F "image=@test.jpg"  
-
+```
 Response:
-
+```
 {
   "image_id": "uuid",
   "message": "Image upload initiated"
 }
-
+```
 ---
 
 ### 4. Retrieve processed image
-
+```
 curl http://localhost:5000/images/processed/<image_id>  
-
+```
 ---
 
 ## API Endpoints
@@ -131,35 +136,49 @@ Returns a pre-signed URL for the processed image.
 ---
 
 ### GET /health
-
+```
 { "status": "ok" }
-
+```
 ---
 
 ## Running Tests
 
 ### API Unit Tests
-
-cd api-service  
-pip install -r src/requirements.txt pytest  
-pytest tests -v  
+```
+cd api-service
+```
+```
+pip install -r src/requirements.txt pytest
+```
+``` 
+pytest tests -v
+```
 
 ---
 
 ### Worker Unit Tests
-
-cd worker-service  
-pip install -r src/requirements.txt pytest Pillow  
-pytest tests -v  
+```
+cd worker-service
+```
+``` 
+pip install -r src/requirements.txt pytest Pillow
+```
+```
+pytest tests -v
+```
 
 ---
 
 ### Integration Tests
-
+```
 docker compose up -d  
-
-pip install requests pytest pillow boto3  
-pytest tests/integration -v --integration  
+```
+```
+pip install requests pytest pillow boto3
+```
+```
+pytest tests/integration -v --integration
+```
 
 ---
 
@@ -186,9 +205,9 @@ The GitHub Actions pipeline includes:
 - Worker unit tests  
 - Integration tests using LocalStack  
 - Docker image build  
-
+```
 .github/workflows/ci-cd.yml  
-
+```
 ---
 
 ## Summary
