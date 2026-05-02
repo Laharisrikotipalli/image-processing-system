@@ -13,9 +13,9 @@ from config import (
     AWS_ENDPOINT_URL,
 )
 
-# ---------------- LOGGING ----------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record):
@@ -25,12 +25,12 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
         })
 
+
 handler = logging.StreamHandler()
 handler.setFormatter(JsonFormatter())
 logger.handlers = [handler]
 logger.propagate = False
 
-# ---------------- APP ----------------
 app = Flask(__name__)
 
 PUBLIC_HOST = os.getenv("PUBLIC_HOST", "localhost")
@@ -39,32 +39,36 @@ ALLOWED_MIME_TYPES = {"image/jpeg", "image/png"}
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 
 
-# ---------------- AWS CLIENTS ----------------
+
 def get_s3_client():
-    kwargs = {"region_name": AWS_REGION}
-    if AWS_ENDPOINT_URL:
-        kwargs["endpoint_url"] = AWS_ENDPOINT_URL
-    return boto3.client("s3", **kwargs)
+    return boto3.client(
+        "s3",
+        region_name=AWS_REGION,
+        endpoint_url=AWS_ENDPOINT_URL,
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
+    )
 
 
 def get_sqs_client():
-    kwargs = {"region_name": AWS_REGION}
-    if AWS_ENDPOINT_URL:
-        kwargs["endpoint_url"] = AWS_ENDPOINT_URL
-    return boto3.client("sqs", **kwargs)
+    return boto3.client(
+        "sqs",
+        region_name=AWS_REGION,
+        endpoint_url=AWS_ENDPOINT_URL,
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
+    )
 
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-# ---------------- HEALTH ----------------
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"}), 200
 
 
-# ---------------- UPLOAD ----------------
 @app.route("/images/upload", methods=["POST"])
 def upload_image():
     if "image" not in request.files:
@@ -89,8 +93,9 @@ def upload_image():
         s3 = get_s3_client()
         sqs = get_sqs_client()
 
-        # Upload to S3
         image_file.seek(0)
+
+        # Upload to S3
         s3.upload_fileobj(
             image_file,
             S3_BUCKET_RAW,
@@ -98,7 +103,10 @@ def upload_image():
             ExtraArgs={"ContentType": image_file.mimetype},
         )
 
-        logger.info(json.dumps({"event": "s3_upload_success", "image_id": image_id}))
+        logger.info(json.dumps({
+            "event": "s3_upload_success",
+            "image_id": image_id
+        }))
 
         # Send message to SQS
         message = {
@@ -111,7 +119,10 @@ def upload_image():
             MessageBody=json.dumps(message)
         )
 
-        logger.info(json.dumps({"event": "sqs_message_sent", "image_id": image_id}))
+        logger.info(json.dumps({
+            "event": "sqs_message_sent",
+            "image_id": image_id
+        }))
 
         return jsonify({
             "image_id": image_id,
@@ -119,11 +130,13 @@ def upload_image():
         }), 202
 
     except Exception as e:
-        logger.error(json.dumps({"event": "error", "error": str(e)}))
+        logger.error(json.dumps({
+            "event": "error",
+            "error": str(e)
+        }))
         return jsonify({"error": "Internal server error"}), 500
 
 
-# ---------------- GET PROCESSED ----------------
 @app.route("/images/processed/<image_id>", methods=["GET"])
 def get_processed_image(image_id):
     s3_key = f"{image_id}_thumbnail.png"
@@ -131,7 +144,6 @@ def get_processed_image(image_id):
     try:
         s3 = get_s3_client()
 
-        # Check existence
         s3.head_object(Bucket=S3_BUCKET_PROCESSED, Key=s3_key)
 
         url = s3.generate_presigned_url(
@@ -140,7 +152,6 @@ def get_processed_image(image_id):
             ExpiresIn=3600
         )
 
-        # ✅ FIX FOR LOCALSTACK
         url = url.replace("localstack", PUBLIC_HOST)
 
         return jsonify({
@@ -156,6 +167,5 @@ def get_processed_image(image_id):
         return jsonify({"error": "Internal server error"}), 500
 
 
-# ---------------- RUN ----------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
