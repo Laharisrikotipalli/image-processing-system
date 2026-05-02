@@ -11,32 +11,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install API dependencies
-        run: |
+      - run: |
           cd api-service
           pip install -r src/requirements.txt pytest pytest-mock
-
-      - name: Run API tests
-        run: |
-          cd api-service
           pytest tests -v
 
-      - name: Install Worker dependencies
-        run: |
+      - run: |
           cd worker-service
           pip install -r src/requirements.txt pytest pytest-mock pillow
-
-      - name: Run Worker tests
-        run: |
-          cd worker-service
           pytest tests -v
 
 
@@ -45,29 +33,30 @@ jobs:
     needs: unit-tests
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: |
-          pip install requests pytest pillow boto3
+      - run: pip install requests pytest pillow boto3 awscli-local
 
-      - name: Verify Docker
-        run: |
-          docker --version
-          docker compose version
+      - run: docker compose up -d --build
 
-      - name: Start Services
-        run: |
-          docker compose up -d --build
+      - run: |
+          for i in {1..20}; do
+            if curl -s http://localhost:4566/_localstack/health | grep -q '"initialized": true'; then
+              break
+            fi
+            sleep 3
+          done
 
-      - name: Wait for API
-        run: |
+      - run: |
+          awslocal s3 mb s3://raw-images-propelhq || true
+          awslocal s3 mb s3://processed-images-propelhq || true
+          awslocal sqs create-queue --queue-name image-processing-queue-propelhq || true
+
+      - run: |
           for i in {1..15}; do
             if curl -s http://localhost:5000/health | grep -q "ok"; then
               break
@@ -75,9 +64,7 @@ jobs:
             sleep 3
           done
 
-      - name: Run integration tests
-        run: |
-          pytest tests/integration --integration -v
+      - run: pytest tests/integration --integration -v
         env:
           AWS_ENDPOINT_URL: http://localhost:4566
           S3_BUCKET_RAW: raw-images-propelhq
@@ -90,14 +77,9 @@ jobs:
     needs: integration-tests
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Build API image
-        run: docker build -t propelhq-api ./api-service
-
-      - name: Build Worker image
-        run: docker build -t propelhq-worker ./worker-service
+      - uses: actions/checkout@v4
+      - run: docker build -t propelhq-api ./api-service
+      - run: docker build -t propelhq-worker ./worker-service
 
 
   push:
@@ -106,21 +88,17 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and Push API
-        run: |
+      - run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/propelhq-api ./api-service
           docker push ${{ secrets.DOCKER_USERNAME }}/propelhq-api
 
-      - name: Build and Push Worker
-        run: |
+      - run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/propelhq-worker ./worker-service
           docker push ${{ secrets.DOCKER_USERNAME }}/propelhq-worker
