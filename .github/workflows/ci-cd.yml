@@ -41,7 +41,9 @@ jobs:
           python-version: '3.11'
 
       - name: Install Python dependencies
-        run: pip install requests pytest boto3 pillow
+        # Pin boto3/botocore to match app requirements — latest botocore switched
+        # SQS to JSON protocol which LocalStack 2.3 rejects with "Operation detection failed"
+        run: pip install requests pytest pillow "boto3==1.26.165" "botocore==1.29.165"
 
       - name: Start LocalStack
         run: docker compose up -d localstack
