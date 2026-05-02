@@ -3,6 +3,7 @@ import logging
 import json
 import os
 import boto3
+import traceback
 from botocore.exceptions import ClientError
 from flask import Flask, request, jsonify
 from config import (
@@ -107,7 +108,7 @@ def upload_image():
         }), 202
 
     except Exception as e:
-        logger.error(str(e))
+        logger.error(traceback.format_exc())
         return jsonify({
             "error": "Internal server error",
             "details": str(e)
