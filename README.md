@@ -104,6 +104,17 @@ Response:
 ```
 curl http://localhost:5000/images/processed/<image_id>  
 ```
+#### Response:
+```
+{
+  "image_id": "uuid",
+  "url": "http://localhost:4566/processed-images-propelhq/...png"
+}
+```
+### 5. Download the image
+``Open the returned URL in a browser
+The processed image will download/display
+The image includes the watermark``
 ---
 
 ## API Endpoints
