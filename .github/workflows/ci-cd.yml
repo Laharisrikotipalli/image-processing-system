@@ -37,32 +37,26 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install deps
-        run: pip install requests pytest pillow boto3 awscli
+      - run: pip install requests pytest pillow boto3 awscli
 
-      - name: Start containers
-        run: docker compose up -d --build
+      - run: docker compose up -d localstack
 
-      - name: Wait for LocalStack
-        run: |
+      - run: |
           for i in {1..20}; do
-            if curl -s http://localhost:4566/_localstack/health | grep -q '"initialized": true'; then
+            if curl -s http://localhost:4566; then
               break
             fi
             sleep 3
           done
 
-    
-      - name: Create S3 and SQS
-        run: |
+      - run: |
           aws --endpoint-url=http://localhost:4566 s3 mb s3://raw-images-propelhq || true
           aws --endpoint-url=http://localhost:4566 s3 mb s3://processed-images-propelhq || true
+          aws --endpoint-url=http://localhost:4566 sqs create-queue --queue-name image-processing-queue-propelhq || true
 
-          aws --endpoint-url=http://localhost:4566 sqs create-queue \
-            --queue-name image-processing-queue-propelhq || true
+      - run: docker compose up -d api worker
 
-      - name: Wait for API
-        run: |
+      - run: |
           for i in {1..15}; do
             if curl -s http://localhost:5000/health | grep -q "ok"; then
               break
@@ -70,11 +64,9 @@ jobs:
             sleep 3
           done
 
-      - name: Debug logs
-        run: docker logs api-service || true
+      - run: docker logs api-service || true
 
-      - name: Run integration tests
-        run: pytest tests/integration --integration -v
+      - run: pytest tests/integration --integration -v
         env:
           AWS_ENDPOINT_URL: http://localhost:4566
           S3_BUCKET_RAW: raw-images-propelhq
