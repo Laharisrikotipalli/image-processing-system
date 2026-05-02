@@ -43,6 +43,7 @@ jobs:
 
       - run: docker compose up -d --build
 
+      # wait for LocalStack
       - run: |
           for i in {1..20}; do
             if curl -s http://localhost:4566/_localstack/health | grep -q '"initialized": true'; then
@@ -51,11 +52,13 @@ jobs:
             sleep 3
           done
 
+      # create resources
       - run: |
           awslocal s3 mb s3://raw-images-propelhq || true
           awslocal s3 mb s3://processed-images-propelhq || true
           awslocal sqs create-queue --queue-name image-processing-queue-propelhq || true
 
+      # wait for API
       - run: |
           for i in {1..15}; do
             if curl -s http://localhost:5000/health | grep -q "ok"; then
@@ -64,12 +67,15 @@ jobs:
             sleep 3
           done
 
+      # DEBUG (very important if fails)
+      - run: docker logs api-service || true
+
       - run: pytest tests/integration --integration -v
         env:
-          AWS_ENDPOINT_URL: http://localstack:4566
+          AWS_ENDPOINT_URL: http://localhost:4566
           S3_BUCKET_RAW: raw-images-propelhq
           S3_BUCKET_PROCESSED: processed-images-propelhq
-          SQS_QUEUE_URL: http://localstack:4566/000000000000/image-processing-queue-propelhq
+          SQS_QUEUE_URL: http://localhost:4566/000000000000/image-processing-queue-propelhq
 
 
   build:
