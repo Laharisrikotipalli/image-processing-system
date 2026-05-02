@@ -60,26 +60,16 @@ jobs:
             sleep 2
           done
 
-      - name: Create AWS resources
-        env:
-          AWS_ACCESS_KEY_ID: test
-          AWS_SECRET_ACCESS_KEY: test
-          AWS_DEFAULT_REGION: us-east-1
+      - name: Run localstack-init to create AWS resources
         run: |
-          aws --endpoint-url=http://localhost:4566 s3 mb s3://raw-images-propelhq || true
-          aws --endpoint-url=http://localhost:4566 s3 mb s3://processed-images-propelhq || true
-          python3 - <<'EOF'
-          import boto3
-          sqs = boto3.client(
-              "sqs",
-              region_name="us-east-1",
-              endpoint_url="http://localhost:4566",
-              aws_access_key_id="test",
-              aws_secret_access_key="test",
-          )
-          resp = sqs.create_queue(QueueName="image-processing-queue-propelhq")
-          print("Queue created:", resp["QueueUrl"])
-          EOF
+          docker compose up --no-build localstack-init
+          EXIT=$(docker inspect localstack-init --format='{{.State.ExitCode}}')
+          if [ "$EXIT" != "0" ]; then
+            echo "localstack-init failed with exit code $EXIT"
+            docker logs localstack-init
+            exit 1
+          fi
+          echo "localstack-init completed successfully"
 
       - name: Verify resources exist
         env:
@@ -104,8 +94,8 @@ jobs:
               print(url)
           EOF
 
-      - name: Start API + Worker
-        run: docker compose up -d api worker
+      - name: Start API and Worker
+        run: docker compose up -d --no-deps api worker
 
       - name: Wait for API to be ready
         run: |
@@ -121,6 +111,7 @@ jobs:
       - name: Show service logs (debug)
         if: always()
         run: |
+          echo "=== LocalStack Init logs ===" && docker logs localstack-init || true
           echo "=== API logs ===" && docker logs api-service || true
           echo "=== Worker logs ===" && docker logs worker-service || true
 
