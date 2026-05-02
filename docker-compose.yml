@@ -1,7 +1,6 @@
 version: "3.8"
 
 services:
-
   localstack:
     image: localstack/localstack:2.3
     container_name: localstack
