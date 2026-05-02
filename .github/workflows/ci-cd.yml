@@ -6,7 +6,6 @@ on:
   pull_request:
 
 jobs:
-
   unit-tests:
     runs-on: ubuntu-latest
     steps:
@@ -15,21 +14,21 @@ jobs:
         with:
           python-version: '3.11'
 
-      - run: |
+      - name: API Unit Tests
+        run: |
           cd api-service
           pip install -r src/requirements.txt pytest pytest-mock
           pytest tests -v
 
-      - run: |
+      - name: Worker Unit Tests
+        run: |
           cd worker-service
           pip install -r src/requirements.txt pytest pytest-mock pillow
           pytest tests -v
 
-
   integration-tests:
     runs-on: ubuntu-latest
     needs: unit-tests
-
     steps:
       - uses: actions/checkout@v4
 
@@ -37,46 +36,81 @@ jobs:
         with:
           python-version: '3.11'
 
-      - run: pip install requests pytest pillow boto3 awscli
+      - name: Install dependencies
+        run: pip install requests pytest pillow boto3
 
-      - run: docker compose up -d localstack
+      - name: Start LocalStack
+        run: docker compose up -d localstack
 
-      - run: |
-          for i in {1..20}; do
-            if curl -s http://localhost:4566; then break; fi
-            sleep 3
-          done
-
-      - run: |
-          aws --endpoint-url=http://localhost:4566 s3 mb s3://raw-images-propelhq || true
-          aws --endpoint-url=http://localhost:4566 s3 mb s3://processed-images-propelhq || true
-          aws --endpoint-url=http://localhost:4566 sqs create-queue --queue-name image-processing-queue-propelhq || true
-
-      - run: docker compose up -d api worker
-
-      - run: |
-          for i in {1..15}; do
-            if curl -s http://localhost:5000/health | grep -q "ok"; then break; fi
-            sleep 3
-          done
-
-      - run: docker logs api-service || true
-
-      - run: pytest tests/integration --integration -v
+      - name: Wait for LocalStack & Setup Resources
         env:
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
-          AWS_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          # Wait for LocalStack to be ready
+          for i in {1..20}; do
+            if curl -s http://localhost:4566/_localstack/health | grep -q "available"; then break; fi
+            echo "Waiting for LocalStack..."
+            sleep 3
+          done
+          
+          # Create S3 Buckets
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://raw-images-propelhq
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://processed-images-propelhq
+          
+          # Create SQS Queue
+          aws --endpoint-url=http://localhost:4566 sqs create-queue --queue-name image-processing-queue-propelhq
+
+      - name: Start API and Worker
+        run: docker compose up -d api worker
+
+      - name: Wait for API Health Check
+        run: |
+          for i in {1..15}; do
+            if curl -s http://localhost:5000/health | grep -q "ok"; then break; fi
+            echo "Waiting for API..."
+            sleep 3
+          done
+
+      - name: Run Integration Tests
+        env:
+          # Credentials for boto3 in the test script
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+          # The test script talks to localhost (host runner perspective)
           AWS_ENDPOINT_URL: http://localhost:4566
           S3_BUCKET_RAW: raw-images-propelhq
           S3_BUCKET_PROCESSED: processed-images-propelhq
           SQS_QUEUE_URL: http://localhost:4566/000000000000/image-processing-queue-propelhq
+        run: pytest tests/integration --integration -v
 
+      - name: Debug Logs on Failure
+        if: failure()
+        run: |
+          docker logs api-service
+          docker logs worker-service
 
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
     needs: integration-tests
+    if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t propelhq-api ./api-service
-      - run: docker build -t propelhq-worker ./worker-service
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push API
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/propelhq-api:latest ./api-service
+          docker push ${{ secrets.DOCKER_USERNAME }}/propelhq-api:latest
+
+      - name: Build and Push Worker
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/propelhq-worker:latest ./worker-service
+          docker push ${{ secrets.DOCKER_USERNAME }}/propelhq-worker:latest
