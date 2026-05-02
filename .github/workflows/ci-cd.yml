@@ -32,13 +32,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - run: pip install requests pytest pillow boto3 awscli-local
+      - name: Install deps
+        run: pip install requests pytest pillow boto3 awscli
 
-      - run: docker compose up -d --build
+      - name: Start containers
+        run: docker compose up -d --build
 
       - name: Wait for LocalStack
         run: |
@@ -49,11 +52,14 @@ jobs:
             sleep 3
           done
 
+    
       - name: Create S3 and SQS
         run: |
-          awslocal s3 mb s3://raw-images-propelhq || true
-          awslocal s3 mb s3://processed-images-propelhq || true
-          awslocal sqs create-queue --queue-name image-processing-queue-propelhq || true
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://raw-images-propelhq || true
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://processed-images-propelhq || true
+
+          aws --endpoint-url=http://localhost:4566 sqs create-queue \
+            --queue-name image-processing-queue-propelhq || true
 
       - name: Wait for API
         run: |
@@ -64,10 +70,11 @@ jobs:
             sleep 3
           done
 
-      - name: Debug API logs
+      - name: Debug logs
         run: docker logs api-service || true
 
-      - run: pytest tests/integration --integration -v
+      - name: Run integration tests
+        run: pytest tests/integration --integration -v
         env:
           AWS_ENDPOINT_URL: http://localhost:4566
           S3_BUCKET_RAW: raw-images-propelhq
@@ -88,8 +95,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/main'
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
