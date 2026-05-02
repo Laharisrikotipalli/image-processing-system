@@ -1,6 +1,6 @@
 # PropelHQ Image Processing Service
 
-An event-driven image processing system built with Flask, AWS S3, AWS SQS, and Docker.
+An event-driven image processing system built with Flask, AWS S3, AWS SQS, and Docker. The system demonstrates a scalable, asynchronous microservice architecture for handling image uploads and processing.
 
 ---
 
@@ -12,7 +12,7 @@ Client → POST /images/upload → API Service → S3 (raw) + SQS message
 → Worker polls SQS  
 → Downloads raw image  
 → Resizes to 150×150 (preserving aspect ratio)  
-→ (Optional) Adds "PropelHQ" watermark  
+→ Adds watermark  
 → Uploads to S3 (processed)  
 → Deletes SQS message  
 
@@ -27,13 +27,14 @@ propelhq-image-service/
 ├── worker-service/  
 ├── tests/  
 │   └── integration/  
-├── docs/  
-│   └── architecture.png  
 ├── scripts/  
 │   └── init.py  
+├── docs/  
+│   └── architecture.png  
 ├── docker-compose.yml  
 ├── .env.example  
-├── .github/workflows/ci-cd.yml  
+├── .github/workflows/  
+│   └── ci-cd.yml  
 └── README.md  
 
 ---
@@ -41,31 +42,30 @@ propelhq-image-service/
 ## Features
 
 - Event-driven architecture using SQS  
-- Asynchronous image processing  
-- Image resizing (150×150 with aspect ratio)  
-- Optional watermarking support ("PropelHQ")  
-- Fault-tolerant worker with retry logic  
-- Dead Letter Queue (DLQ) support  
+- Asynchronous image processing pipeline  
+- Image resizing (150×150 with aspect ratio preserved)  
+- Optional watermark support  
+- Retry handling with Dead Letter Queue (DLQ)  
 - Local AWS simulation using LocalStack  
-- Fully containerized using Docker  
+- Fully containerized with Docker  
 - Unit and integration testing  
 
 ---
 
-## Quick Start (Local — Docker)
+## Quick Start (Local Setup)
 
 ### Prerequisites
 
-- Docker & Docker Compose installed  
-- Port 5000 and 4566 free  
+- Docker installed  
+- Docker Compose available  
+- Ports 5000 and 4566 available  
 
 ---
 
-### 1. Clone and configure
+### 1. Clone the repository
 
 git clone <your-repo-url>  
 cd propelhq-image-service  
-
 cp .env.example .env  
 
 ---
@@ -75,13 +75,14 @@ cp .env.example .env
 docker compose up --build  
 
 This starts:
-- LocalStack (S3 + SQS)  
-- API Service (port 5000)  
-- Worker Service  
+
+- LocalStack (S3 and SQS simulation)  
+- API service on port 5000  
+- Worker service for background processing  
 
 ---
 
-### 3. Upload Image
+### 3. Upload an image
 
 curl -X POST http://localhost:5000/images/upload -F "image=@test.jpg"  
 
@@ -94,39 +95,44 @@ Response:
 
 ---
 
-### 4. Get Processed Image
+### 4. Retrieve processed image
 
 curl http://localhost:5000/images/processed/<image_id>  
 
 ---
 
-## API Documentation
+## API Endpoints
 
 ### POST /images/upload
 
-Upload image (JPEG, PNG only)
+Uploads an image for asynchronous processing.
 
-| Code | Description |
-|------|------------|
-| 202  | Accepted |
-| 400  | Invalid request |
-| 500  | Server error |
+- Content-Type: multipart/form-data  
+- Supported formats: JPEG, PNG  
+
+| Status | Description |
+|--------|------------|
+| 202    | Accepted   |
+| 400    | Invalid request |
+| 500    | Server error |
 
 ---
 
 ### GET /images/processed/{image_id}
 
-| Code | Description |
-|------|------------|
-| 200  | Returns processed image URL |
-| 404  | Not found |
-| 500  | Error |
+Returns a pre-signed URL for the processed image.
+
+| Status | Description |
+|--------|------------|
+| 200    | Success    |
+| 404    | Not found  |
+| 500    | Error      |
 
 ---
 
 ### GET /health
 
-200 OK → { "status": "ok" }
+{ "status": "ok" }
 
 ---
 
@@ -174,18 +180,17 @@ pytest tests/integration -v --integration
 
 ## CI/CD Pipeline
 
-Includes:
+The GitHub Actions pipeline includes:
+
 - API unit tests  
 - Worker unit tests  
-- Integration tests  
+- Integration tests using LocalStack  
 - Docker image build  
 
 .github/workflows/ci-cd.yml  
 
 ---
 
-## Final Notes
+## Summary
 
-- Uses LocalStack to simulate AWS services locally  
-- Fully asynchronous processing using SQS  
-- Production-style microservice architecture  
+This project demonstrates a production-style backend system using microservices, asynchronous processing with message queues, and cloud service simulation for local development.
