@@ -20,13 +20,13 @@ jobs:
       - name: Run API unit tests
         run: |
           cd api-service
-          pip install -r src/requirements.txt pytest
+          pip install -r src/requirements.txt -r requirements-test.txt
           pytest tests -v
 
       - name: Run Worker unit tests
         run: |
           cd worker-service
-          pip install -r src/requirements.txt pytest pillow
+          pip install -r src/requirements.txt -r requirements-test.txt
           pytest tests -v
 
 
@@ -41,63 +41,85 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: pip install requests pytest boto3 awscli pillow
 
       - name: Start LocalStack
         run: docker compose up -d localstack
 
-      - name: Wait for LocalStack FULL READY
+      - name: Wait for LocalStack to be ready
         run: |
           for i in {1..30}; do
-            if curl -s http://localhost:4566/_localstack/health | grep -q '"initialized": true'; then
-              echo "LocalStack ready"
+            STATUS=$(curl -sf http://localhost:4566/_localstack/health || true)
+            if echo "$STATUS" | grep -q '"version"'; then
+              echo "LocalStack ready: $STATUS"
               break
             fi
-            echo "Waiting for LocalStack..."
+            echo "Waiting for LocalStack... attempt $i/30"
             sleep 2
           done
 
       - name: Create AWS resources
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
         run: |
           aws --endpoint-url=http://localhost:4566 s3 mb s3://raw-images-propelhq || true
           aws --endpoint-url=http://localhost:4566 s3 mb s3://processed-images-propelhq || true
-          aws --endpoint-url=http://localhost:4566 sqs create-queue --queue-name image-processing-queue-propelhq || true
-
-      - name: Wait after creating resources
-        run: sleep 5
+          DLQ_URL=$(aws --endpoint-url=http://localhost:4566 sqs create-queue \
+            --queue-name image-processing-dlq-propelhq \
+            --query 'QueueUrl' --output text)
+          DLQ_ARN=$(aws --endpoint-url=http://localhost:4566 sqs get-queue-attributes \
+            --queue-url "$DLQ_URL" --attribute-names QueueArn \
+            --query 'Attributes.QueueArn' --output text)
+          aws --endpoint-url=http://localhost:4566 sqs create-queue \
+            --queue-name image-processing-queue-propelhq \
+            --attributes "{\"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}" || true
 
       - name: Verify resources exist
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
         run: |
+          echo "=== S3 Buckets ==="
           aws --endpoint-url=http://localhost:4566 s3 ls
+          echo "=== SQS Queues ==="
           aws --endpoint-url=http://localhost:4566 sqs list-queues
 
       - name: Start API + Worker
         run: docker compose up -d api worker
 
-      - name: Wait for API
+      - name: Wait for API to be ready
         run: |
           for i in {1..20}; do
-            if curl -s http://localhost:5000/health | grep -q "ok"; then
+            if curl -sf http://localhost:5000/health | grep -q "ok"; then
               echo "API ready"
               break
             fi
+            echo "Waiting for API... attempt $i/20"
             sleep 2
           done
 
-      - name: Show API logs (debug if needed)
-        run: docker logs api-service || true
+      - name: Show service logs (debug)
+        if: always()
+        run: |
+          echo "=== API logs ===" && docker logs api-service || true
+          echo "=== Worker logs ===" && docker logs worker-service || true
 
       - name: Run integration tests
-        run: pytest tests/integration --integration -v
         env:
+          API_BASE_URL: http://localhost:5000
           AWS_ACCESS_KEY_ID: test
           AWS_SECRET_ACCESS_KEY: test
           AWS_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-1
           AWS_ENDPOINT_URL: http://localhost:4566
           S3_BUCKET_RAW: raw-images-propelhq
           S3_BUCKET_PROCESSED: processed-images-propelhq
           SQS_QUEUE_URL: http://localhost:4566/000000000000/image-processing-queue-propelhq
+        run: pytest tests/integration --integration -v
 
 
   build:

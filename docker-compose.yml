@@ -1,6 +1,7 @@
 version: "3.8"
 
 services:
+
   localstack:
     image: localstack/localstack:2.3
     container_name: localstack
@@ -9,6 +10,15 @@ services:
     environment:
       - SERVICES=s3,sqs
       - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - ./scripts/init-localstack.sh:/etc/localstack/init/ready.d/init-localstack.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   api:
     build: ./api-service
@@ -24,7 +34,8 @@ services:
       S3_BUCKET_PROCESSED: processed-images-propelhq
       SQS_QUEUE_URL: http://localstack:4566/000000000000/image-processing-queue-propelhq
     depends_on:
-      - localstack
+      localstack:
+        condition: service_healthy
 
   worker:
     build: ./worker-service
@@ -38,4 +49,8 @@ services:
       S3_BUCKET_PROCESSED: processed-images-propelhq
       SQS_QUEUE_URL: http://localstack:4566/000000000000/image-processing-queue-propelhq
     depends_on:
-      - localstack
+      localstack:
+        condition: service_healthy
+
+volumes:
+  localstack-data:
